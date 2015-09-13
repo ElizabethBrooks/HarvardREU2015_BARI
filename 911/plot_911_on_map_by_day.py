@@ -10,7 +10,7 @@ import sys
 
 import os
 sys.path.append(os.path.realpath('../census'))
-import bostonmap2 as bm
+import bostonmap as bm
 import poisson911 as pts
 
 # time_fmt declares the format for the time data

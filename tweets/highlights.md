@@ -1,0 +1,9 @@
+### Description of Highlight Animations
+
+1. _bombing_keyword.gif_:
+	- Possible title: **How Information Spread With Twitter on the Day of the Boston Marathon Bombings**
+	- Description: The above animation shows the greater Boston region and the location of bombing-relevant tweets (blue) and bombing-informative tweets (orange) on the April 15th, 2013 from 3:00 PM, shortly after the bombing, and the remaining hours of the day. The area shown encompasses Route 128 and the entire Boston Marathon route, going from I-495 to the coastline. The different counties are color-coded with Suffolk county (dark grey) having thicker borders and the marathon route shown by the white path. Tweets were considered relevant if they contained at least one of the words within a dictionary of keywords relevant to the bombings. Informative tweets were relevant tweets which also contained one or more of the Twitter handles for Boston's news organizations and/or public services. Note: these only include geocoded tweets, which only accounted for roughly 6% of the total tweets posted on a given day in 2013.  
+<br>
+2. _manhunt_sentiment.gif_:
+	- Possible title: **The Flow of Sentiments on the Day of the Manhunt for Boston Marathon Bomber, Dzhokhar Tsarnaev**
+	- Description: The above animation shows the location of positive (orange), negative (blue), and neutral (green) tweets in the greater Boston region for the entire day of April 19th, 2013, when a firefight in Watertown led to an entire lockdown of Boston and its surrounding areas as authorities search for an injured Dzhokhar Tsarnaev, the only remaining suspect of the Boston Marathon Bombings.

@@ -13,7 +13,7 @@ import sys
 
 import os
 sys.path.append(os.path.realpath('../census'))
-import bostonmap2 as bm
+import bostonmap as bm
 import poisson311 as pts
 
 probTol = 0.05

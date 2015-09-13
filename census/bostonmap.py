@@ -1,6 +1,6 @@
 ############################################################################################################################
 # author: Hayden Fuss
-# last edited: Monday, July 20, 2015
+# last edited: Tuesday, August 4, 2015
 #
 # Module for plotting data over a map of greater Boston using census data. Given a tuple/list of dictionaries, which
 # have 'lat' and 'lon' key/value pairs, these classes can plot the data over the map. There are both scatter
@@ -39,14 +39,16 @@ myDir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe()))
 
 bostonTracts = '/boston/Tracts_Boston_2010_BARI'
 stateTracts = '/mass_cb/gz_2010_25_140_00_500k'
-# stateTracts = '/mass_tiger/tl_2014_25_tract'
 
 # list of counties with INCITS: https://en.wikipedia.org/wiki/List_of_counties_in_Massachusetts
-countyColors = {'017':'#A64345', '001':'#075B1F', '003':'#FEA39D', '005':'#2AFA7C', 
-                '007':'#7E7125', '009':'#4E65EF', '011':'#BC4638', '013':'#C8C736', 
+countyColors = {'017':'#8B3A3A', '001':'#075B1F', '003':'#FEA39D', '005':'#2AFA7C', 
+                '007':'#7E7125', '009':'#00688B', '011':'#BC4638', '013':'#C8C736', 
                 '015':'#F0BF26', '021':'#02896F', '025':'#6E95A3', '023':'#50658C',
-                '027':'#32B126', '019':'#B66497'}
+                '027':'#858585', '019':'#B66497'}
 suffolkID = '025'
+
+lowerLeft = (-71.5688, 42.1575)
+upperRight = (-70.6616, 42.6296)
 
 route = [(-71.5166, 42.2307),
          (-71.501906, 42.236432),
@@ -119,15 +121,12 @@ class BostonMap(object):
 
   def mapDF(self):
     # set up a map dataframe
-    self.df_map = pd.DataFrame({
-      'poly': [Polygon(xy) for xy in self.map.boston],
-      'land_info': [info for info in self.map.boston_info]})
+    self.df_map = pd.DataFrame(self.map.boston_info)
+    self.df_map['poly'] = [Polygon(xy) for xy in self.map.boston]
 
     # are these units in meters? and if so shouldnt conversion be 1,000,000 not 100,000?
     self.df_map['area_m'] = self.df_map['poly'].map(lambda x: x.area)
     self.df_map['area_km'] = self.df_map['area_m'] / 100000 
-    
-    #print self.df_map['land_info'].iloc[0]
 
     return
 
@@ -315,17 +314,17 @@ class BostonDensity(BostonScatter):
     super(BostonDensity, self).dataDF()
 
     self.df_map['count'] = self.df_map['poly'].map(lambda x: int(len(filter(prep(x).contains, self.dataPoints))))
-    self.df_map['density_m'] = self.df_map['count'] / self.df_map['area_m']
-    self.df_map['density_km'] = self.df_map['count'] / self.df_map['area_km']
+    self.df_map['POP100'] = self.df_map['POP100'].apply(float)
+    self.df_map['density'] = (self.df_map['count'] * 1000) / self.df_map['POP100']
     # it's easier to work with NaN values when classifying
-    self.df_map.replace(to_replace={'density_m': {0: np.nan}, 'density_km': {0: np.nan}}, inplace=True)
+    self.df_map.replace(to_replace={'density': {0: np.nan}}, inplace=True)
 
     self.breaks = nb(
-      self.df_map[self.df_map['density_km'].notnull()].density_km.values,
+      self.df_map[self.df_map['density'].notnull()].density.values,
       initial=300,
       k=5)
     # the notnull method lets us match indices when joining
-    jb = pd.DataFrame({'jenks_bins': self.breaks.yb}, index=self.df_map[self.df_map['density_km'].notnull()].index)
+    jb = pd.DataFrame({'jenks_bins': self.breaks.yb}, index=self.df_map[self.df_map['density'].notnull()].index)
     self.df_map = self.df_map.join(jb)
     self.df_map.jenks_bins.fillna(-1, inplace=True)
 
@@ -351,15 +350,15 @@ class BostonDensity(BostonScatter):
     # draw tracts with black outline. make suffolk (boston) thicker
     super(BostonDensity, self).patchesDF()
 
-    self.jenks_labels = ["<= %0.1f/km$^2$(%s tracts)" % (b, c) for b, c in zip(
+    self.jenks_labels = ["<= %0.1f per 1000 people (%s tracts)" % (b, c) for b, c in zip(
     self.breaks.bins, self.breaks.counts)]
-    self.jenks_labels.insert(0, '<= 0.0/km$^2$(%s tracts)' % len(self.df_map[self.df_map['density_km'].isnull()]))
+    self.jenks_labels.insert(0, '<= 0.0 per 1000 people (%s tracts)' % len(self.df_map[self.df_map['density'].isnull()]))
     return
 
   def data(self):
-    highest = '\n'.join([row['land_info']['CT_ID_10'] + "," + 
-                        str(row['density_km']) for i, row in self.df_map[
-                        (self.df_map['jenks_bins'] == 4)][:30].sort(columns='density_km',
+    highest = '\n'.join([row['CT_ID_10'] + "," + 
+                        str(row['density']) for i, row in self.df_map[
+                        (self.df_map['jenks_bins'] == 4)][:30].sort(columns='density',
                         ascending=False).iterrows()])
     self.highest = 'TRACT_ID,DENSITY\n' + highest
     return
@@ -378,7 +377,111 @@ class BostonDensityCT(BostonDensity):
 
     self.dataPoints = np.array(temp)
 
-    self.df_map['count'] = self.df_map['land_info'].map(lambda x: (self.dataPoints == int(x['CT_ID_10'])).sum())
+    self.df_map['count'] = self.df_map['CT_ID_10'].map(lambda x: int((self.dataPoints == int(x)).sum()))
+    self.df_map['POP100'] = self.df_map['POP100'].apply(float)
+    self.df_map['density'] = (self.df_map['count'] * 1000) / self.df_map['POP100']
+    # it's easier to work with NaN values when classifying
+    self.df_map.replace(to_replace={'density': {0: np.nan}}, inplace=True)
+
+    self.breaks = nb(
+      self.df_map[self.df_map['density'].notnull()].density.values,
+      initial=300,
+      k=5)
+    # the notnull method lets us match indices when joining
+    jb = pd.DataFrame({'jenks_bins': self.breaks.yb}, index=self.df_map[self.df_map['density'].notnull()].index)
+    self.df_map = self.df_map.join(jb)
+    self.df_map.jenks_bins.fillna(-1, inplace=True)
+    return
+
+
+#########################################################################################################################
+
+class GreaterBostonScatter(BostonScatter):
+  def __init__(self, dataPoints):
+    self.dataPoints = dataPoints
+    self.shpfile = myDir + stateTracts
+    self.extra = 0.01
+    self.ll = lowerLeft
+    self.ur = upperRight
+    self.coords = list(chain(self.ll, self.ur))
+    self.w, self.h = self.coords[2] - self.coords[0], self.coords[3] - self.coords[1]
+    self.routeColor = 'w'
+    return
+
+  def makePlot(self, outname, title):
+    #self.cities()
+    self.marathon()
+    plt.title(title)
+    self.fig.set_size_inches((self.w/self.h)*10, 10)
+    plt.savefig(outname + '.png', dpi=100, alpha=True)
+    return
+
+  def patchesDF(self):
+    self.df_map['patches'] = [PolygonPatch(row['poly'],
+      fc=countyColors[row['COUNTY']], ec='k',
+      lw=0.25 if (row['COUNTY'] != suffolkID) else 0.8,
+      #lw=0.25,
+      alpha=.9, zorder=4) for i,row in self.df_map.iterrows()]
+    return
+
+  def marathon(self):
+    lon = []
+    lat = []
+    for p in route:
+      lon.append(p[0])
+      lat.append(p[1])
+    lon = np.array(lon)
+    lat = np.array(lat)
+    x,y = self.map(lon, lat)
+    self.map.plot(x, y, self.routeColor + '-', markersize=20)
+
+    lon = route[0][0]
+    lat = route[0][1]
+    x,y = self.map(lon, lat)
+    self.map.plot(x, y, self.routeColor + 'o', markersize=8)
+
+
+    lon = route[-1][0]
+    lat = route[-1][1]
+    x,y = self.map(lon, lat)
+    self.map.plot(x, y, self.routeColor + 'o', markersize=8)
+
+    return
+
+  def cities(self):
+
+    labels = ['Watertown', 'Boston', 'Cambridge', 'Brookline', 'Quincy', 'Hopkinton', 'Waltham', 'Arlington', 
+              'Somerville', 'Revere', 'Natick', 'Ashland', 'Wellesley', 'Newton']
+
+    lons = [ -71.1833, -71.0590, -71.1106, -71.1217, -71.0000, -71.5231, -71.2350, 
+            -71.1569, -71.1000, -71.0125, -71.4167, 
+            -71.4639, -71.2931, -71.2097]    
+    lats = [42.3708, 42.3599, 42.3736, 42.3317, 42.2500, 42.2286, 42.3806, 42.4153,
+            42.3875, 42.4083, 42.2833, 42.2611, 
+            42.2964, 42.3369] 
+
+    x,y = self.map(lons, lats)
+    for i in range(0, len(x)):
+      self.map.plot(x[i], y[i], marker='o', color='#33ccff', markersize=5)
+
+    for label, xpt, ypt in zip(labels, x, y):
+      plt.text(xpt-1000, ypt-1300, label)
+
+    return
+
+
+#########################################################################################################################
+
+class GreaterBostonDensity(GreaterBostonScatter):
+  def __init__(self, dataPoints):
+    super(GreaterBostonDensity, self).__init__(dataPoints)
+    self.routeColor = 'r'
+    return
+
+  def dataDF(self):
+    super(GreaterBostonDensity, self).dataDF()
+
+    self.df_map['count'] = self.df_map['poly'].map(lambda x: int(len(filter(prep(x).contains, self.dataPoints))))
     self.df_map['density_m'] = self.df_map['count'] / self.df_map['area_m']
     self.df_map['density_km'] = self.df_map['count'] / self.df_map['area_km']
     # it's easier to work with NaN values when classifying
@@ -392,79 +495,7 @@ class BostonDensityCT(BostonDensity):
     jb = pd.DataFrame({'jenks_bins': self.breaks.yb}, index=self.df_map[self.df_map['density_km'].notnull()].index)
     self.df_map = self.df_map.join(jb)
     self.df_map.jenks_bins.fillna(-1, inplace=True)
-    return
 
-
-#########################################################################################################################
-
-class GreaterBostonScatter(BostonScatter):
-  def __init__(self, dataPoints):
-    self.dataPoints = dataPoints
-    self.shpfile = myDir + stateTracts
-    self.extra = 0.01
-    self.ll = (-71.5457, 42.1697)
-    self.ur = (-70.8975, 42.4014)
-    self.coords = list(chain(self.ll, self.ur))
-    self.w, self.h = self.coords[2] - self.coords[0], self.coords[3] - self.coords[1]
-    return
-
-  def makePlot(self, outname, title):
-    self.marathon()
-    plt.title(title)
-    self.fig.set_size_inches((self.w/self.h)*10, 10)
-    plt.savefig(outname + '.png', dpi=100, alpha=True)
-    return
-
-  def patchesDF(self):
-    self.df_map['patches'] = [PolygonPatch(row['poly'],
-      fc=countyColors[row['land_info']['COUNTY']], ec='k',
-      lw=0.25 if (row['land_info']['COUNTY'] != suffolkID) else 0.8,
-      alpha=.9, zorder=4) for i,row in self.df_map.iterrows()]
-    return
-
-  def marathon(self):
-    lon = []
-    lat = []
-    for p in route:
-      lon.append(p[0])
-      lat.append(p[1])
-    lon = np.array(lon)
-    lat = np.array(lat)
-    x,y = self.map(lon, lat)
-    self.map.plot(x, y, 'w-', markersize=20)
-
-    lon = route[0][0]
-    lat = route[0][1]
-    x,y = self.map(lon, lat)
-    self.map.plot(x, y, 'wo', markersize=8)
-
-
-    lon = route[-1][0]
-    lat = route[-1][1]
-    x,y = self.map(lon, lat)
-    self.map.plot(x, y, 'wo', markersize=8)
-
-    return
-
-
-#########################################################################################################################
-
-class GreaterBostonDensity(BostonDensity):
-  def __init__(self, dataPoints):
-    self.dataPoints = dataPoints
-    self.shpfile = myDir + stateTracts
-    self.extra = 0.01
-    self.ll = (-71.5457, 42.1697)
-    self.ur = (-70.8975, 42.4014)
-    self.coords = list(chain(self.ll, self.ur))
-    self.w, self.h = self.coords[2] - self.coords[0], self.coords[3] - self.coords[1]
-    return
-
-  def makePlot(self, outname, title):
-    self.marathon()
-    plt.title(title)
-    self.fig.set_size_inches((self.w/self.h)*10, 10)
-    plt.savefig(outname + '.png', dpi=100, alpha=True)
     return
 
   def patchesDF(self):
@@ -472,47 +503,62 @@ class GreaterBostonDensity(BostonDensity):
     self.cmap = plt.get_cmap('Blues')
     # draw tracts with black outline. make suffolk (boston) thicker
     self.df_map['patches'] = [PolygonPatch(row['poly'], ec='k',
-      lw=0.25 if (row['land_info']['COUNTY'] != suffolkID) else 0.8,
+      lw=0.25 if (row['COUNTY'] != suffolkID) else 0.8,
       alpha=.9, zorder=4) for i,row in self.df_map.iterrows()]
 
-    self.jenks_labels = ["<= %0.1f/km$^2$(%s tracts)" % (b, c) for b, c in zip(
+    self.jenks_labels = ["<=$%0.1f/km$^2$ (%s tracts)" % (b, c) for b, c in zip(
     self.breaks.bins, self.breaks.counts)]
-    self.jenks_labels.insert(0, '<= 0.0/km$^2$(%s tracts)' % len(self.df_map[self.df_map['density_km'].isnull()]))
+    self.jenks_labels.insert(0, '<=$0.0/km$^2$ (%s tracts)' % len(self.df_map[self.df_map['density_km'].isnull()]))
     return
 
   def data(self):
-    highest = '\n'.join([row['land_info']['TRACT'] + "," + 
+    highest = '\n'.join([row['TRACT'] + "," + 
                         str(row['density_km']) for i, row in self.df_map[
                         (self.df_map['jenks_bins'] == 4)][:30].sort(columns='density_km',
                         ascending=False).iterrows()])
     self.highest = 'TRACT_ID,DENSITY\n' + highest
     return # function returns nothing
 
-  def marathon(self):
-    lon = []
-    lat = []
-    for p in route:
-      lon.append(p[0])
-      lat.append(p[1])
-    lon = np.array(lon)
-    lat = np.array(lat)
-    x,y = self.map(lon, lat)
-    self.map.plot(x, y, 'r-', markersize=20)
-
-    lon = route[0][0]
-    lat = route[0][1]
-    x,y = self.map(lon, lat)
-    self.map.plot(x, y, 'ro', markersize=8)
-
-
-    lon = route[-1][0]
-    lat = route[-1][1]
-    x,y = self.map(lon, lat)
-    self.map.plot(x, y, 'ro', markersize=8)
-
+  def tracts(self):
+    self.pc = PatchCollection(self.df_map['patches'], match_original=True)
+    # impose our colour map onto the patch collection
+    norm = mplc.Normalize()
+    self.pc.set_facecolor(self.cmap(norm(self.df_map['jenks_bins'].values)))
+    self.ax.add_collection(self.pc)
     return
 
 #######################################################################################################################
+
+class ColoredGBScatter(GreaterBostonScatter):
+  def __init__(self, dataPoints):
+    # call parent constructor
+    super(ColoredGBScatter, self).__init__(dataPoints)
+    return
+
+  def dataDF(self):
+    for k in self.dataPoints.keys():
+      output = {'lon':[], 'lat':[]}
+      for d in self.dataPoints[k]['data']:
+        for each in ('lon', 'lat'):
+          output[each].append(d[each])
+      df = pd.DataFrame(output)
+      df[['lon', 'lat']] = df[['lon', 'lat']].astype(float)
+      self.dataPoints[k]['series'] = pd.Series(
+        [Point(self.map(mapped_x, mapped_y)) for mapped_x, mapped_y in zip(df['lon'], df['lat'])])
+    return
+
+  def data(self):
+    for k in self.dataPoints.keys():
+      self.map.scatter(
+        [geom.x for geom in self.dataPoints[k]['series']],
+        [geom.y for geom in self.dataPoints[k]['series']],
+        10, marker='o', lw=.25,
+        facecolor=self.dataPoints[k]['face'], edgecolor=self.dataPoints[k]['edge'],
+        alpha=0.9, antialiased=True, zorder=3)
+    return
+
+#######################################################################################################################
+
 
 def testMap():
   out = raw_input("Enter name of output png: ")
@@ -521,17 +567,13 @@ def testMap():
 
 def testScatter():
   out = raw_input("Enter name of output png: ")
-  testData = [
-    {'lon':'-71.0120751', 'lat':'42.27090738'},
-    {'lon':'-71.1864942', 'lat':'42.36610796'},
-    {'lon':'-71.0530936', 'lat':'42.35931187'}
-  ]
+  testData = []
   boston = GreaterBostonScatter(testData)
-  boston.plotMap(outname=out, title='Scatterplot Over Boston')
+  boston.plotMap(outname=out, title='Map of Greater Boston')
   return
 
 #####################################################################################################################
 
 if __name__ == "__main__":
-  testMap()
-  plt.show()
+  testScatter()
+  #plt.show()
