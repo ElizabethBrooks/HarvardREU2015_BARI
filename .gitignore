@@ -1,7 +1,5 @@
 
-*.csv
 *.ipynb_checkpoints
-*.zip
 *.pyc
 
 CENSUS2010TRACTS*
